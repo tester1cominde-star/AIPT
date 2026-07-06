@@ -1,0 +1,25 @@
+{
+  "name": "food-calorie-backend",
+  "version": "2.0.0",
+  "description": "Backend يستقبل صورة أكل ويرجع تحليل غذائي JSON باستخدام مجموعة مفاتيح Gemini مع تدوير تلقائي",
+  "main": "server.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.0",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "@supabase/supabase-js": "^2.39.0",
+    "barcode-detector": "^2.2.0",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.7",
+    "groq-sdk": "^0.5.0"
+  }
+}

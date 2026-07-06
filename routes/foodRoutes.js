@@ -1,13 +1,17 @@
 import express from "express";
 import multer from "multer";
-import fs from "fs";
 import { analyzeFoodImage } from "../models/groqService.js";
 import { saveFoodLog } from "../supabaseClient.js";
 import { getProductFromBarcode } from "../barcodeUtils.js";
 import { detectBarcode } from "../barcodeScanner.js";
 
 const router = express.Router();
-const upload = multer({ dest: "uploads/" });
+
+// Use memory storage instead of disk storage.
+// Vercel's serverless functions run on a read-only filesystem (except /tmp),
+// so multer cannot create/write to an "uploads/" folder there.
+// With memoryStorage, the uploaded file lives in RAM as `file.buffer`.
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Analyze food image with Groq (first checks for barcode)
 router.post("/analyze-food", upload.single("image"), async (req, res) => {
@@ -23,16 +27,15 @@ router.post("/analyze-food", upload.single("image"), async (req, res) => {
   }
 
   try {
-    const imageBuffer = fs.readFileSync(file.path);
+    // File is already in memory, no need to read from disk
+    const imageBuffer = file.buffer;
 
     // First try to detect barcode
-    
     try {
       const barcode = await detectBarcode(imageBuffer);
       if (barcode) {
         const foodData = await getProductFromBarcode(barcode);
-        fs.unlink(file.path, () => {});
-        
+
         try {
           const savedLog = await saveFoodLog({
             user_id: userId,
@@ -47,15 +50,12 @@ router.post("/analyze-food", upload.single("image"), async (req, res) => {
     } catch (barcodeError) {
       console.log("No barcode detected, proceeding with food analysis");
     }
-  
 
     // If no barcode, analyze with Groq
     const base64Image = imageBuffer.toString("base64");
     const result = await analyzeFoodImage(base64Image, file.mimetype);
 
     if (result.success) {
-      fs.unlink(file.path, () => {});
-
       // Save to Supabase
       try {
         const savedLog = await saveFoodLog({
@@ -69,14 +69,12 @@ router.post("/analyze-food", upload.single("image"), async (req, res) => {
       }
     }
 
-    fs.unlink(file.path, () => {});
     return res.status(result.status || 500).json({
       error: "Failed to analyze food image",
       details: result.details,
     });
   } catch (err) {
     console.error(err);
-    if (file?.path) fs.unlink(file.path, () => {});
     return res.status(500).json({ error: "Internal server error", details: err.message });
   }
 });
@@ -95,16 +93,14 @@ router.post("/scan-barcode", upload.single("image"), async (req, res) => {
   }
 
   try {
-    const imageBuffer = fs.readFileSync(file.path);
+    const imageBuffer = file.buffer;
     const barcode = await detectBarcode(imageBuffer);
 
     if (!barcode) {
-      fs.unlink(file.path, () => {});
       return res.status(400).json({ error: "No barcode detected in image" });
     }
 
     const foodData = await getProductFromBarcode(barcode);
-    fs.unlink(file.path, () => {});
 
     // Save to Supabase
     try {
@@ -119,7 +115,6 @@ router.post("/scan-barcode", upload.single("image"), async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    if (file?.path) fs.unlink(file.path, () => {});
     return res.status(500).json({ error: "Failed to scan barcode", details: err.message });
   }
 });

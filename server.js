@@ -126,7 +126,7 @@ app.get("/", (req, res) => {
     <div class="status">System Running</div>
     <p class="description">
       Upload food images to analyze nutritional content using AI. 
-      The system automatically detects barcodes and fetches product information when available.
+      Three main APIs available for food analysis, barcode lookup, and daily summaries.
     </p>
     <div class="endpoints">
       <div class="endpoint">
@@ -134,12 +134,8 @@ app.get("/", (req, res) => {
         <p>Analyze food image with AI. Upload an image to get nutritional estimates.</p>
       </div>
       <div class="endpoint">
-        <h3><span class="method">POST</span><span class="url">/scan-barcode</span></h3>
-        <p>Scan barcode from image. Upload an image containing a barcode to get product info.</p>
-      </div>
-      <div class="endpoint">
         <h3><span class="method">POST</span><span class="url">/analyze-barcode</span></h3>
-        <p>Analyze barcode by number. Send barcode number directly to get product info.</p>
+        <p>Analyze barcode from image. Upload an image containing a barcode to get product info.</p>
       </div>
       <div class="endpoint">
         <h3><span class="method">GET</span><span class="url">/health/daily-summary</span></h3>

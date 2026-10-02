@@ -1,9 +1,12 @@
 import Groq from "groq-sdk";
 import dotenv from "dotenv";
+import { createKeyPool, classifyQuotaError } from "../keyPool.js";
 dotenv.config();
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-console.log("Groq client initialized");
+// إنشاء pool من مفاتيح Groq
+const groqKeyPool = createKeyPool(process.env.GROQ_API_KEYS || "");
+
+console.log(`Groq key pool initialized with ${groqKeyPool.size()} key(s)`);
 
 // ملاحظة: response_format: "json_object" (المستخدم تحت) بيضمن إن الرد JSON صحيح بس،
 // من غير ما يضمن التزامه بأسماء/أنواع حقول معينة. عشان نضمن الالتزام بالحقول،
@@ -122,75 +125,125 @@ function parseTextResponse(text) {
 }
 
 export async function analyzeFoodImage(imageBase64, mimeType) {
-  try {
-    const completion = await groq.chat.completions.create({
-      model: "qwen/qwen3.6-27b",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${imageBase64}`,
-              },
-            },
-          ],
-        },
-      ],
-      temperature: 0.5,
-    });
+  const maxRetries = groqKeyPool.size(); // عدد المرات القصوى = عدد المفاتيح
+  let lastError = null;
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      return { error: true, status: 502, details: "No response from Groq" };
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // الحصول على مفتاح متاح
+    const { key, index, allExhausted, retryAfterMs } = groqKeyPool.getAvailableKey();
+
+    // لو كل المفاتيح في cooldown
+    if (allExhausted) {
+      return {
+        error: true,
+        status: 503,
+        details: "All Groq API keys are exhausted. Please retry later.",
+        retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+      };
     }
 
-    let parsedData;
     try {
-      // Try to parse directly first
-      parsedData = JSON.parse(content);
-    } catch {
-      // Try to extract JSON from markdown code blocks or text
-      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/```\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        try {
-          parsedData = JSON.parse(jsonMatch[1]);
-        } catch {
-          // If JSON parsing fails, parse text response
-          parsedData = parseTextResponse(content);
-        }
-      } else {
-        // Try to find JSON-like object in the text
-        const objMatch = content.match(/\{[\s\S]*\}/);
-        if (objMatch) {
+      // إنشاء عميل Groq بالمفتاح الحالي
+      const groq = new Groq({ apiKey: key });
+
+      const completion = await groq.chat.completions.create({
+        model: "qwen/qwen3.8-27b",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: PROMPT },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${imageBase64}`,
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0.5,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        return { error: true, status: 502, details: "No response from Groq" };
+      }
+
+      let parsedData;
+      try {
+        // Try to parse directly first
+        parsedData = JSON.parse(content);
+      } catch {
+        // Try to extract JSON from markdown code blocks or text
+        const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/```\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
           try {
-            parsedData = JSON.parse(objMatch[0]);
+            parsedData = JSON.parse(jsonMatch[1]);
           } catch {
             // If JSON parsing fails, parse text response
             parsedData = parseTextResponse(content);
           }
         } else {
-          // Parse text response
-          parsedData = parseTextResponse(content);
+          // Try to find JSON-like object in the text
+          const objMatch = content.match(/\{[\s\S]*\}/);
+          if (objMatch) {
+            try {
+              parsedData = JSON.parse(objMatch[0]);
+            } catch {
+              // If JSON parsing fails, parse text response
+              parsedData = parseTextResponse(content);
+            }
+          } else {
+            // Parse text response
+            parsedData = parseTextResponse(content);
+          }
         }
       }
-    }
 
-    const { valid, missing } = validateShape(parsedData);
-    if (!valid) {
+      const { valid, missing } = validateShape(parsedData);
+      if (!valid) {
+        return {
+          error: true,
+          status: 502,
+          details: `Groq response missing required fields: ${missing.join(", ")}`,
+          raw: parsedData,
+        };
+      }
+
+      return { success: true, data: parsedData };
+    } catch (error) {
+      console.error(`Groq API error with key index ${index}:`, error.message);
+      lastError = error;
+
+      // لو الخطأ 429 (كوتة خلصت)، نحط المفتاح في cooldown ونحاول بالمفتاح التالي
+      if (error.status === 429 || error.code === 429) {
+        const kind = classifyQuotaError(error);
+        groqKeyPool.markExhausted(key, kind);
+        console.log(`Key ${index} marked as exhausted (${kind}), switching to next key...`);
+        continue; // حاول بالمفتاح التالي
+      }
+
+      // لو الخطأ مش 429، نرجع الخطأ فوراً
       return {
         error: true,
-        status: 502,
-        details: `Groq response missing required fields: ${missing.join(", ")}`,
-        raw: parsedData,
+        status: error.status || 500,
+        details: error.message,
       };
     }
-
-    return { success: true, data: parsedData };
-  } catch (error) {
-    console.error("Groq API error:", error);
-    return { error: true, status: error.status || 500, details: error.message };
   }
+
+  // لو وصلنا هنا، معناه جربنا كل المفاتيح وكلهم فشلوا
+  return {
+    error: true,
+    status: 503,
+    details: "All Groq API keys failed. Last error: " + (lastError?.message || "Unknown error"),
+  };
+}
+
+/**
+ * ترجع حالة كل مفاتيح Groq
+ */
+export function getGroqKeyStatus() {
+  return groqKeyPool.getStatus();
 }

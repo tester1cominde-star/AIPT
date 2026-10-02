@@ -84,12 +84,12 @@ class KeyPool {
 }
 
 /**
- * يحدد نوع تجاوز الكوتة (يومي ولا دقيقة) من رسالة/تفاصيل خطأ Gemini
- * Gemini بيرجع status: "RESOURCE_EXHAUSTED" مع تفاصيل quota metric زي "PerDay" أو "PerMinute"
+ * يحدد نوع تجاوز الكوتة (يومي ولا دقيقة) من رسالة/تفاصيل خطأ
+ * يعمل مع Gemini و Groq
  */
-export function classifyQuotaError(geminiErrorBody) {
-  const text = JSON.stringify(geminiErrorBody || {});
-  if (/PerDay|per_day|daily/i.test(text)) return "day";
+export function classifyQuotaError(errorBody) {
+  const text = JSON.stringify(errorBody || {});
+  if (/PerDay|per_day|daily|day/i.test(text)) return "day";
   return "minute";
 }
 

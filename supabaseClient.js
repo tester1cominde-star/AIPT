@@ -9,8 +9,19 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
 
 if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey);
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      headers: {
+        'Connection': 'keep-alive'
+      }
+    }
+  });
   console.log("✅ Supabase client initialized");
+  console.log(`Supabase URL: ${supabaseUrl}`);
 } else {
   console.warn("⚠️  SUPABASE_URL or SUPABASE_ANON_KEY not set - database features disabled");
 }
@@ -26,33 +37,39 @@ export async function saveFoodLog(foodData) {
     return null;
   }
 
-  const { data, error } = await supabase
-    .from("food_logs")
-    .insert({
-      user_id: foodData.user_id,
-      food_name: foodData.food_name,
-      portion_estimate: foodData.portion_estimate,
-      calories_kcal: foodData.calories_kcal,
-      protein_g: foodData.protein_g,
-      carbs_g: foodData.carbs_g,
-      fat_g: foodData.fat_g,
-      saturated_fat_g: foodData.saturated_fat_g,
-      sugar_g: foodData.sugar_g,
-      fiber_g: foodData.fiber_g,
-      sodium_mg: foodData.sodium_mg,
-      confidence: foodData.confidence,
-      notes: foodData.notes,
-      image_url: foodData.image_url,
-      barcode: foodData.barcode,
-    })
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("food_logs")
+      .insert({
+        user_id: foodData.user_id,
+        food_name: foodData.food_name,
+        portion_estimate: foodData.portion_estimate,
+        calories_kcal: foodData.calories_kcal,
+        protein_g: foodData.protein_g,
+        carbs_g: foodData.carbs_g,
+        fat_g: foodData.fat_g,
+        saturated_fat_g: foodData.saturated_fat_g,
+        sugar_g: foodData.sugar_g,
+        fiber_g: foodData.fiber_g,
+        sodium_mg: foodData.sodium_mg,
+        confidence: foodData.confidence,
+        notes: foodData.notes,
+        image_url: foodData.image_url,
+        barcode: foodData.barcode,
+      })
+      .select()
+      .single();
 
-  if (error) {
-    throw new Error(`Failed to save food log: ${error.message}`);
+    if (error) {
+      console.error("Supabase insert error:", error);
+      throw new Error(`Failed to save food log: ${error.message}`);
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Supabase save error details:", err);
+    throw new Error(`Failed to save food log: ${err.message}`);
   }
-
-  return data;
 }
 
 /**

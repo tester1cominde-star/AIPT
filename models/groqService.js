@@ -36,10 +36,19 @@ Respond ONLY with valid JSON matching exactly this structure (no extra fields, n
 ${RESPONSE_SHAPE_DESCRIPTION}`;
 
 // الحقول اللي لازم تكون موجودة دايمًا في رد الموديل - لو ناقصة نرفض الرد بدل ما نبعت بيانات غير مكتملة
-const REQUIRED_FIELDS = ["food_name", "calories_kcal", "protein_g", "carbs_g", "fat_g", "confidence"];
+const REQUIRED_FIELDS = [
+  "food_name",
+  "calories_kcal",
+  "protein_g",
+  "carbs_g",
+  "fat_g",
+  "confidence",
+];
 
 function validateShape(data) {
-  const missing = REQUIRED_FIELDS.filter((field) => data[field] === undefined || data[field] === null);
+  const missing = REQUIRED_FIELDS.filter(
+    (field) => data[field] === undefined || data[field] === null,
+  );
   return { valid: missing.length === 0, missing };
 }
 
@@ -63,27 +72,39 @@ function parseTextResponse(text) {
   };
 
   // Extract food name
-  const foodMatch = text.match(/food[_\s]?name[:\s]+([^\n,]+)/i) || text.match(/(?:food|dish|item)[:\s]+([^\n,]+)/i);
+  const foodMatch =
+    text.match(/food[_\s]?name[:\s]+([^\n,]+)/i) ||
+    text.match(/(?:food|dish|item)[:\s]+([^\n,]+)/i);
   if (foodMatch) data.food_name = foodMatch[1].trim();
 
   // Extract portion
-  const portionMatch = text.match(/portion[_\s]?estimate[:\s]+([^\n,]+)/i) || text.match(/portion[:\s]+([^\n,]+)/i);
+  const portionMatch =
+    text.match(/portion[_\s]?estimate[:\s]+([^\n,]+)/i) ||
+    text.match(/portion[:\s]+([^\n,]+)/i);
   if (portionMatch) data.portion_estimate = portionMatch[1].trim();
 
   // Extract calories
-  const caloriesMatch = text.match(/calories[_\s]?kcal[:\s]+(\d+)/i) || text.match(/calories[:\s]+(\d+)/i);
+  const caloriesMatch =
+    text.match(/calories[_\s]?kcal[:\s]+(\d+)/i) ||
+    text.match(/calories[:\s]+(\d+)/i);
   if (caloriesMatch) data.calories_kcal = parseInt(caloriesMatch[1]);
 
   // Extract protein
-  const proteinMatch = text.match(/protein[_\s]?g[:\s]+(\d+\.?\d*)/i) || text.match(/protein[:\s]+(\d+\.?\d*)/i);
+  const proteinMatch =
+    text.match(/protein[_\s]?g[:\s]+(\d+\.?\d*)/i) ||
+    text.match(/protein[:\s]+(\d+\.?\d*)/i);
   if (proteinMatch) data.protein_g = parseFloat(proteinMatch[1]);
 
   // Extract carbs
-  const carbsMatch = text.match(/carbs[_\s]?g[:\s]+(\d+\.?\d*)/i) || text.match(/carbohydrates[:\s]+(\d+\.?\d*)/i);
+  const carbsMatch =
+    text.match(/carbs[_\s]?g[:\s]+(\d+\.?\d*)/i) ||
+    text.match(/carbohydrates[:\s]+(\d+\.?\d*)/i);
   if (carbsMatch) data.carbs_g = parseFloat(carbsMatch[1]);
 
   // Extract fat
-  const fatMatch = text.match(/fat[_\s]?g[:\s]+(\d+\.?\d*)/i) || text.match(/fat[:\s]+(\d+\.?\d*)/i);
+  const fatMatch =
+    text.match(/fat[_\s]?g[:\s]+(\d+\.?\d*)/i) ||
+    text.match(/fat[:\s]+(\d+\.?\d*)/i);
   if (fatMatch) data.fat_g = parseFloat(fatMatch[1]);
 
   // Extract saturated fat
@@ -112,9 +133,9 @@ function parseTextResponse(text) {
 
   // If food name is still empty, try to extract from beginning of text
   if (!data.food_name) {
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     for (const line of lines) {
-      if (line.trim() && !line.includes(':') && line.length < 100) {
+      if (line.trim() && !line.includes(":") && line.length < 100) {
         data.food_name = line.trim();
         break;
       }
@@ -130,7 +151,8 @@ export async function analyzeFoodImage(imageBase64, mimeType) {
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     // الحصول على مفتاح متاح
-    const { key, index, allExhausted, retryAfterMs } = groqKeyPool.getAvailableKey();
+    const { key, index, allExhausted, retryAfterMs } =
+      groqKeyPool.getAvailableKey();
 
     // لو كل المفاتيح في cooldown
     if (allExhausted) {
@@ -162,7 +184,7 @@ export async function analyzeFoodImage(imageBase64, mimeType) {
             ],
           },
         ],
-        temperature: 0.5,
+        temperature: 0.1,
       });
 
       const content = completion.choices[0]?.message?.content;
@@ -176,7 +198,9 @@ export async function analyzeFoodImage(imageBase64, mimeType) {
         parsedData = JSON.parse(content);
       } catch {
         // Try to extract JSON from markdown code blocks or text
-        const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/```\s*([\s\S]*?)\s*```/);
+        const jsonMatch =
+          content.match(/```json\s*([\s\S]*?)\s*```/) ||
+          content.match(/```\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
           try {
             parsedData = JSON.parse(jsonMatch[1]);
@@ -220,7 +244,9 @@ export async function analyzeFoodImage(imageBase64, mimeType) {
       if (error.status === 429 || error.code === 429) {
         const kind = classifyQuotaError(error);
         groqKeyPool.markExhausted(key, kind);
-        console.log(`Key ${index} marked as exhausted (${kind}), switching to next key...`);
+        console.log(
+          `Key ${index} marked as exhausted (${kind}), switching to next key...`,
+        );
         continue; // حاول بالمفتاح التالي
       }
 
@@ -237,7 +263,9 @@ export async function analyzeFoodImage(imageBase64, mimeType) {
   return {
     error: true,
     status: 503,
-    details: "All Groq API keys failed. Last error: " + (lastError?.message || "Unknown error"),
+    details:
+      "All Groq API keys failed. Last error: " +
+      (lastError?.message || "Unknown error"),
   };
 }
 
